@@ -10,5 +10,5 @@ export default defineConfig({
     tailwindcss(), // Add it right here
   ],
 
-  base: '/Fuel-MPG-Tracker/', // Add this line for GitHub Pages
+  base: '/Virtual-Garage-For-Nerd/', // Add this line for GitHub Pages
 })
