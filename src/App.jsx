@@ -971,9 +971,9 @@ export default function App() {
             VIRTUAL GARAGE FOR NERD
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-2 font-medium tracking-wide flex items-center justify-center gap-2">
-            <span>THE ULTIMATE VEHICLE HUB</span>
+            <span>THE ENTHUSIAST VEHICLE HUB</span>
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-            <span>MODS • STATS • MAINTENANCE</span>
+            <span>STATS • MODS • MAINTENANCE</span>
           </p>
         </div>
 
