@@ -62,6 +62,7 @@ export default function App() {
   const [detailsDrafts, setDetailsDrafts] = useState({});
   const [isSavingDetails, setIsSavingDetails] = useState(false);
   const [detailsSavedSuccess, setDetailsSavedSuccess] = useState(false);
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
 
   // UI States - Fuel Logs
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -84,6 +85,7 @@ export default function App() {
   const [isAddingMod, setIsAddingMod] = useState(false);
   const [newModForm, setNewModForm] = useState({ 
     date: new Date().toISOString().split('T')[0], 
+    mileage: '',
     category: '', 
     specs: '', 
     notes: '' 
@@ -91,6 +93,7 @@ export default function App() {
   const [editingModId, setEditingModId] = useState(null);
   const [editModForm, setEditModForm] = useState({ 
     date: '', 
+    mileage: '',
     category: '', 
     specs: '', 
     notes: '' 
@@ -104,9 +107,9 @@ export default function App() {
   const [maintSortConfig, setMaintSortConfig] = useState({ key: 'date', direction: 'desc' });
   const [maintForm, setMaintForm] = useState({
     date: new Date().toISOString().split('T')[0],
-    item: '',
+    service: '',
     mileage: '',
-    performer: '',
+    performedBy: '',
     notes: ''
   });
 
@@ -295,10 +298,33 @@ export default function App() {
   // --- Mods Management ---
   const currentVehicleMods = useMemo(() => {
     if (!activeVehicleId) return [];
-    return mods
-      .filter(m => m.vehicleId === activeVehicleId)
-      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-  }, [mods, activeVehicleId]);
+    let items = mods.filter(m => m.vehicleId === activeVehicleId);
+    items.sort((a, b) => {
+      let aVal = a[modSortConfig.key];
+      let bVal = b[modSortConfig.key];
+      if (aVal === null || aVal === undefined) aVal = '';
+      if (bVal === null || bVal === undefined) bVal = '';
+
+      if (modSortConfig.key === 'mileage') {
+        const aNum = parseFloat(aVal) || 0;
+        const bNum = parseFloat(bVal) || 0;
+        return modSortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum;
+      }
+
+      if (aVal < bVal) return modSortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return modSortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return items;
+  }, [mods, activeVehicleId, modSortConfig]);
+
+  const handleModSort = (key) => {
+    let direction = 'asc';
+    if (modSortConfig.key === key && modSortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setModSortConfig({ key, direction });
+  };
 
   const handleAddMod = async (e) => {
     e.preventDefault();
@@ -306,24 +332,42 @@ export default function App() {
     const modId = Math.random().toString(36).substr(2, 9);
     await setDoc(doc(db, 'users', user.uid, 'mods', modId), {
       vehicleId: activeVehicleId,
+      date: newModForm.date,
+      mileage: parseFloat(newModForm.mileage) || 0,
       category: newModForm.category.trim(),
       specs: newModForm.specs.trim(),
+      notes: newModForm.notes.trim(),
       createdAt: new Date().toISOString()
     });
-    setNewModForm({ category: '', specs: '' });
+    setNewModForm({ 
+      date: new Date().toISOString().split('T')[0], 
+      mileage: '',
+      category: '', 
+      specs: '', 
+      notes: '' 
+    });
     setIsAddingMod(false);
   };
 
   const handleStartEditMod = (mod) => {
     setEditingModId(mod.id);
-    setEditModForm({ category: mod.category || '', specs: mod.specs || '' });
+    setEditModForm({ 
+      date: mod.date || '', 
+      mileage: mod.mileage !== undefined && mod.mileage !== null ? mod.mileage : '',
+      category: mod.category || '', 
+      specs: mod.specs || '',
+      notes: mod.notes || ''
+    });
   };
 
   const handleSaveEditMod = async (modId) => {
     if (!user || !db || !editModForm.category.trim()) return;
     await setDoc(doc(db, 'users', user.uid, 'mods', modId), {
+      date: editModForm.date,
+      mileage: parseFloat(editModForm.mileage) || 0,
       category: editModForm.category.trim(),
-      specs: editModForm.specs.trim()
+      specs: editModForm.specs.trim(),
+      notes: editModForm.notes.trim()
     }, { merge: true });
     setEditingModId(null);
   };
@@ -342,6 +386,16 @@ export default function App() {
     items.sort((a, b) => {
       let aVal = a[maintSortConfig.key];
       let bVal = b[maintSortConfig.key];
+
+      // Fallback for sorting compatibility between old and new keys
+      if (maintSortConfig.key === 'service') {
+        aVal = a.service || a.item || '';
+        bVal = b.service || b.item || '';
+      } else if (maintSortConfig.key === 'performedBy') {
+        aVal = a.performedBy || a.performer || '';
+        bVal = b.performedBy || b.performer || '';
+      }
+
       if (aVal === null || aVal === undefined) aVal = '';
       if (bVal === null || bVal === undefined) bVal = '';
 
@@ -365,9 +419,11 @@ export default function App() {
     const newMaint = {
       vehicleId: activeVehicleId,
       date: maintForm.date,
-      item: maintForm.item,
+      service: maintForm.service,
+      item: maintForm.service, // preserve backwards compatibility
       mileage: parseFloat(maintForm.mileage) || 0,
-      performer: maintForm.performer || '',
+      performedBy: maintForm.performedBy || '',
+      performer: maintForm.performedBy || '', // preserve backwards compatibility
       notes: maintForm.notes || '',
       updatedAt: new Date().toISOString()
     };
@@ -376,9 +432,9 @@ export default function App() {
     setEditingMaintId(null);
     setMaintForm({
       date: new Date().toISOString().split('T')[0],
-      item: '',
+      service: '',
       mileage: '',
-      performer: '',
+      performedBy: '',
       notes: ''
     });
   };
@@ -386,9 +442,9 @@ export default function App() {
   const openAddMaintModal = () => {
     setMaintForm({
       date: new Date().toISOString().split('T')[0],
-      item: '',
+      service: '',
       mileage: '',
-      performer: '',
+      performedBy: '',
       notes: ''
     });
     setEditingMaintId(null);
@@ -398,9 +454,9 @@ export default function App() {
   const openEditMaintModal = (maint) => {
     setMaintForm({
       date: maint.date || new Date().toISOString().split('T')[0],
-      item: maint.item || '',
+      service: maint.service || maint.item || '',
       mileage: maint.mileage !== undefined && maint.mileage !== null ? maint.mileage : '',
-      performer: maint.performer || '',
+      performedBy: maint.performedBy || maint.performer || '',
       notes: maint.notes || ''
     });
     setEditingMaintId(maint.id);
@@ -757,11 +813,6 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4">
         <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center shadow-2xl space-y-6">
-          <div className="flex justify-center mb-2">
-            <div className="p-4 bg-blue-500/10 rounded-2xl border border-blue-500/20 text-4xl">
-              🏎️
-            </div>
-          </div>
           <div>
             <h1 
               className="text-3xl sm:text-4xl font-black uppercase text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-emerald-400 tracking-wide"
@@ -769,6 +820,13 @@ export default function App() {
             >
               VIRTUAL GARAGE FOR NERD
             </h1>
+          </div>
+          <div className="flex justify-center mb-2">
+            <div className="p-4 bg-blue-500/10 rounded-2xl border border-blue-500/20">
+              <Car size={40} className="text-blue-400" />
+            </div>
+          </div>
+          <div>
             <p className="text-slate-400 text-sm mt-3 leading-relaxed">
               Track vehicle specs, mods, maintenance logs, and fuel efficiency all in one enthusiast hub.
             </p>
@@ -907,24 +965,24 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Maintenance / Repair Item *</label>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Service *</label>
                 <input 
                   type="text" 
                   required 
                   placeholder="e.g. Oil change & filter, Front brake pads, Spark plugs" 
-                  value={maintForm.item} 
-                  onChange={e => setMaintForm({ ...maintForm, item: e.target.value })} 
+                  value={maintForm.service} 
+                  onChange={e => setMaintForm({ ...maintForm, service: e.target.value })} 
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-emerald-500 outline-none text-slate-200" 
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Performer (Car shop or DIY)</label>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Performed By (Car shop or DIY)</label>
                 <input 
                   type="text" 
                   placeholder="e.g. DIY, Dealership, Speed Shop, Precision Auto" 
-                  value={maintForm.performer} 
-                  onChange={e => setMaintForm({ ...maintForm, performer: e.target.value })} 
+                  value={maintForm.performedBy} 
+                  onChange={e => setMaintForm({ ...maintForm, performedBy: e.target.value })} 
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-emerald-500 outline-none text-slate-200" 
                 />
               </div>
@@ -1025,7 +1083,7 @@ export default function App() {
             )}
             <button 
               onClick={handleSignOut}
-              className="px-4 py-2 bg-slate-700/80 hover:bg-slate-600 text-slate-200 text-sm font-semibold rounded-xl border border-slate-600 transition-colors shadow-sm cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-slate-700/80 hover:bg-slate-600 text-slate-200 text-sm font-semibold rounded-xl border border-slate-600 transition-all cursor-pointer"
             >
               Sign Out
             </button>
@@ -1067,35 +1125,52 @@ export default function App() {
                   <input type="text" placeholder="e.g. Civic Type R, Mustang GT" required value={vehicleForm.model} onChange={e => setVehicleForm({...vehicleForm, model: e.target.value})} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:border-blue-500 outline-none" />
                 </div>
                 <div className="flex gap-2 pt-2">
-                  <button type="submit" className="flex-1 bg-blue-500 text-white text-sm font-medium py-2 rounded-lg hover:bg-blue-600 transition-colors cursor-pointer">Save</button>
-                  <button type="button" onClick={() => { setIsAddingVehicle(false); setEditingVehicleId(null); }} className="flex-1 bg-slate-700 text-white text-sm font-medium py-2 rounded-lg hover:bg-slate-600 transition-colors cursor-pointer">Cancel</button>
+                  <button type="submit" className="flex-1 bg-blue-500 text-white text-sm font-semibold py-2 rounded-xl hover:bg-blue-600 transition-colors cursor-pointer">Save</button>
+                  <button type="button" onClick={() => { setIsAddingVehicle(false); setEditingVehicleId(null); }} className="flex-1 bg-slate-700 text-white text-sm font-semibold py-2 rounded-xl hover:bg-slate-600 transition-colors cursor-pointer">Cancel</button>
                 </div>
               </form>
             ) : (
-              <div className="space-y-2 flex-1 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-600 hover:[&::-webkit-scrollbar-thumb]:bg-slate-500 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full">
+              <div className="space-y-2.5 flex-1 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-600 hover:[&::-webkit-scrollbar-thumb]:bg-slate-500 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full">
                 {vehicles.map(v => (
-                  <div key={v.id} className="flex flex-col mb-2">
+                  <div 
+                    key={v.id} 
+                    className={`rounded-xl border transition-all duration-200 overflow-hidden ${
+                      activeVehicleId === v.id 
+                        ? 'border-blue-500/50 bg-slate-900/60 shadow-[0_0_18px_rgba(59,130,246,0.12)]' 
+                        : 'border-slate-700/80 bg-slate-900/50 hover:border-slate-600'
+                    }`}
+                  >
+                    {/* Header Row */}
                     <div 
                       onClick={() => setActiveVehicleId(v.id)}
-                      className={`flex justify-between items-center p-3 rounded-xl border cursor-pointer hover:border-blue-500/50 transition-all ${activeVehicleId === v.id ? 'bg-blue-500/10 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'bg-slate-900/50 border-slate-700'}`}
+                      className={`flex justify-between items-center p-3 cursor-pointer transition-colors ${
+                        activeVehicleId === v.id 
+                          ? 'bg-blue-500/15 hover:bg-blue-500/20' 
+                          : 'hover:bg-slate-800/60'
+                      }`}
                     >
-                      <div>
-                        <span className="text-sm font-semibold">{v.year} {v.make} {v.model}</span>
+                      <div className="flex items-center gap-2 min-w-0 pr-2">
+                        <span className="text-sm font-semibold truncate">{v.year} {v.make} {v.model}</span>
                         {v.nickname && (
-                          <span className="ml-2 text-xs text-indigo-400 italic">"{v.nickname}"</span>
+                          <span className="text-xs text-indigo-300 italic truncate">"{v.nickname}"</span>
                         )}
                       </div>
-                      <div className="flex gap-1">
+                      <div className="flex items-center gap-1 flex-shrink-0">
                         <button onClick={(e) => { e.stopPropagation(); editVehicle(v); }} className="p-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer" title="Edit Vehicle"><Edit2 size={16} /></button>
                         <button onClick={(e) => { e.stopPropagation(); deleteVehicle(v.id); }} className="p-1.5 text-red-400 hover:text-red-300 transition-colors cursor-pointer" title="Delete Vehicle"><Trash2 size={16} /></button>
+                        <span className="text-slate-400 ml-1">
+                          {activeVehicleId === v.id ? <ChevronUp size={16} className="text-blue-400" /> : <ChevronDown size={16} className="text-slate-500" />}
+                        </span>
                       </div>
                     </div>
+
+                    {/* Integrated Drawer / Flow-out Stats Section */}
                     {activeVehicleId === v.id && (
-                      <div className="mt-2 p-3 bg-slate-900/50 border border-slate-700 rounded-xl text-sm space-y-2">
+                      <div className="border-t border-blue-500/25 bg-slate-950/40 p-3.5 text-sm space-y-2.5">
                         {/* In My Garage mode: Current Odometer pulled from last gas fill up, above Lifetime MPG */}
                         {activeTab === 'garage' && (
-                          <div className="flex justify-between text-slate-400">
-                            <span className="flex items-center gap-1.5">
+                          <div className="flex justify-between items-center text-slate-400">
+                            <span className="flex items-center gap-1.5 font-medium">
                               <Gauge size={14} className="text-emerald-400" /> Current Odometer
                             </span> 
                             <span className="text-emerald-400 font-semibold">
@@ -1103,19 +1178,19 @@ export default function App() {
                             </span>
                           </div>
                         )}
-                        <div className="flex justify-between text-slate-400">
-                          <span>Lifetime MPG</span> 
+                        <div className="flex justify-between items-center text-slate-400">
+                          <span className="font-medium">Lifetime MPG</span> 
                           <span className="text-white font-semibold">{vehicleStats.lifetimeMPG}</span>
                         </div>
-                        <div className="flex justify-between text-slate-400">
-                          <span>Best MPG</span> 
+                        <div className="flex justify-between items-center text-slate-400">
+                          <span className="font-medium">Best MPG</span> 
                           <span className="text-blue-400 font-semibold">{vehicleStats.bestMPG}</span>
                         </div>
                         {/* In Fuel & MPG Tracker mode only: Total Spent on Gas */}
                         {activeTab === 'fuel' && (
-                          <div className="flex justify-between text-slate-400">
-                            <span>Total Spent on Gas</span> 
-                            <span className="text-green-400 font-semibold">${vehicleStats.totalSpent}</span>
+                          <div className="flex justify-between items-center text-slate-400">
+                            <span className="font-medium">Total Spent on Gas</span> 
+                            <span className="text-emerald-400 font-semibold">${vehicleStats.totalSpent}</span>
                           </div>
                         )}
                       </div>
@@ -1146,121 +1221,201 @@ export default function App() {
                   <Sparkles size={20} className="text-blue-400" /> Vehicle Details
                 </h2>
                 {activeVehicle && (
-                  <button 
-                    onClick={handleSaveVehicleDetails}
-                    disabled={isSavingDetails}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white border border-blue-500/40 rounded-lg text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {detailsSavedSuccess ? (
-                      <><Check size={14} className="text-green-400" /> Saved!</>
-                    ) : isSavingDetails ? (
-                      <><Loader2 size={14} className="animate-spin" /> Saving...</>
+                  <div className="flex gap-2">
+                    {isEditingDetails ? (
+                      <>
+                        <button 
+                          onClick={async () => {
+                            await handleSaveVehicleDetails();
+                            setIsEditingDetails(false);
+                          }}
+                          disabled={isSavingDetails}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white border border-blue-500/40 rounded-xl text-sm font-semibold transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          {detailsSavedSuccess ? (
+                            <><Check size={14} className="text-green-400" /> Saved!</>
+                          ) : isSavingDetails ? (
+                            <><Loader2 size={14} className="animate-spin" /> Saving...</>
+                          ) : (
+                            <><Save size={14} /> Save Details</>
+                          )}
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setIsEditingDetails(false);
+                            setDetailsDrafts(prev => {
+                              const next = { ...prev };
+                              delete next[activeVehicleIdResolved];
+                              return next;
+                            });
+                          }}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-slate-700/80 hover:bg-slate-600 text-slate-300 border border-slate-600 rounded-xl text-sm font-semibold transition-all cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </>
                     ) : (
-                      <><Save size={14} /> Save Details</>
+                      <button 
+                        onClick={() => setIsEditingDetails(true)}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white border border-blue-500/40 rounded-xl text-sm font-semibold transition-all cursor-pointer"
+                      >
+                        <Edit2 size={14} /> Edit
+                      </button>
                     )}
-                  </button>
+                  </div>
                 )}
               </div>
 
               {activeVehicle ? (
-                <form onSubmit={handleSaveVehicleDetails} className="space-y-3 flex-1 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-600 hover:[&::-webkit-scrollbar-thumb]:bg-slate-500 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Nickname</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. Daily Missile, Track Toy" 
-                        value={currentDetails.nickname} 
-                        onChange={e => updateDetailField('nickname', e.target.value)} 
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:border-blue-500 outline-none text-slate-200" 
-                      />
+                isEditingDetails ? (
+                  /* Edit Mode */
+                  <form onSubmit={async (e) => { e.preventDefault(); await handleSaveVehicleDetails(); setIsEditingDetails(false); }} className="space-y-3 flex-1 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-600 hover:[&::-webkit-scrollbar-thumb]:bg-slate-500 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1">Nickname</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. Daily Missile, Track Toy" 
+                          value={currentDetails.nickname} 
+                          onChange={e => updateDetailField('nickname', e.target.value)} 
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-blue-500 outline-none text-slate-200" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1">Trim</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. Type R, GT, Rubicon" 
+                          value={currentDetails.trim} 
+                          onChange={e => updateDetailField('trim', e.target.value)} 
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-blue-500 outline-none text-slate-200" 
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Trim</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. Type R, GT, Rubicon" 
-                        value={currentDetails.trim} 
-                        onChange={e => updateDetailField('trim', e.target.value)} 
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:border-blue-500 outline-none text-slate-200" 
-                      />
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">VIN</label>
-                      <input 
-                        type="text" 
-                        placeholder="17-character VIN" 
-                        value={currentDetails.vin} 
-                        onChange={e => updateDetailField('vin', e.target.value.toUpperCase())} 
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:border-blue-500 outline-none font-mono text-slate-200 uppercase" 
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1">VIN</label>
+                        <input 
+                          type="text" 
+                          placeholder="17-character VIN" 
+                          value={currentDetails.vin} 
+                          onChange={e => updateDetailField('vin', e.target.value.toUpperCase())} 
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-blue-500 outline-none font-mono text-slate-200 uppercase" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1">Color</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. Championship White, Boosted Blue" 
+                          value={currentDetails.color} 
+                          onChange={e => updateDetailField('color', e.target.value)} 
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-blue-500 outline-none text-slate-200" 
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Color</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. Championship White, Boosted Blue" 
-                        value={currentDetails.color} 
-                        onChange={e => updateDetailField('color', e.target.value)} 
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:border-blue-500 outline-none text-slate-200" 
-                      />
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Purchase Date</label>
-                      <input 
-                        type="date" 
-                        value={currentDetails.purchaseDate} 
-                        onChange={e => updateDetailField('purchaseDate', e.target.value)} 
-                        onClick={e => { if (e.target.showPicker) e.target.showPicker(); }}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:border-blue-500 outline-none text-slate-200 cursor-pointer" 
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1">Purchase Date</label>
+                        <input 
+                          type="date" 
+                          value={currentDetails.purchaseDate} 
+                          onChange={e => updateDetailField('purchaseDate', e.target.value)} 
+                          onClick={e => { if (e.target.showPicker) e.target.showPicker(); }}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-blue-500 outline-none text-slate-200 cursor-pointer" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1">Mileage When Purchased</label>
+                        <input 
+                          type="number" 
+                          placeholder="e.g. 15000" 
+                          value={currentDetails.purchaseMileage} 
+                          onChange={e => updateDetailField('purchaseMileage', e.target.value)} 
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-blue-500 outline-none text-slate-200" 
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Mileage When Purchased</label>
-                      <input 
-                        type="number" 
-                        placeholder="e.g. 15000" 
-                        value={currentDetails.purchaseMileage} 
-                        onChange={e => updateDetailField('purchaseMileage', e.target.value)} 
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:border-blue-500 outline-none text-slate-200" 
-                      />
-                    </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Purchase Price ($)</label>
-                    <div className="relative">
-                      <DollarSign className="absolute left-3 top-2 text-slate-500 pointer-events-none" size={15} />
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        placeholder="e.g. 35000" 
-                        value={currentDetails.purchasePrice} 
-                        onChange={e => updateDetailField('purchasePrice', e.target.value)} 
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-sm focus:border-blue-500 outline-none text-slate-200" 
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Purchase Price ($)</label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-3 top-2.5 text-slate-500 pointer-events-none" size={16} />
+                        <input 
+                          type="number" 
+                          step="0.01" 
+                          placeholder="e.g. 35000" 
+                          value={currentDetails.purchasePrice} 
+                          onChange={e => updateDetailField('purchasePrice', e.target.value)} 
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-sm focus:border-blue-500 outline-none text-slate-200" 
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Notes</label>
+                      <textarea 
+                        rows={2}
+                        placeholder="Factory packages, options, history, or nerd notes..." 
+                        value={currentDetails.note} 
+                        onChange={e => updateDetailField('note', e.target.value)} 
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-blue-500 outline-none text-slate-200 resize-none" 
                       />
                     </div>
-                  </div>
+                  </form>
+                ) : (
+                  /* View Mode - Simple title & text layout (no sub-tiles) */
+                  <div className="space-y-4 flex-1 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-600 hover:[&::-webkit-scrollbar-thumb]:bg-slate-500 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full">
+                    {/* First row: Car year, make, and model pulled from left tile */}
+                    <div className="pb-3 border-b border-slate-700/60">
+                      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Vehicle</span>
+                      <p className="text-base sm:text-lg font-bold text-white mt-0.5">
+                        {activeVehicle.year} {activeVehicle.make} {activeVehicle.model}
+                        {currentDetails.nickname && (
+                          <span className="ml-2 text-sm text-indigo-400 font-normal italic">&quot;{currentDetails.nickname}&quot;</span>
+                        )}
+                      </p>
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Note</label>
-                    <textarea 
-                      rows={2}
-                      placeholder="Factory packages, options, history, or nerd notes..." 
-                      value={currentDetails.note} 
-                      onChange={e => updateDetailField('note', e.target.value)} 
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:border-blue-500 outline-none text-slate-200 resize-none" 
-                    />
+                    {/* Simple Title and Text Layout (no sub-tiles) */}
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3.5">
+                      <div>
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Trim</span>
+                        <p className="text-sm font-medium text-slate-200 mt-0.5">{currentDetails.trim || '—'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Color</span>
+                        <p className="text-sm font-medium text-slate-200 mt-0.5">{currentDetails.color || '—'}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">VIN</span>
+                        <p className="text-sm font-mono font-medium text-slate-200 mt-0.5 uppercase tracking-wide">{currentDetails.vin || '—'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Purchase Date</span>
+                        <p className="text-sm font-medium text-slate-200 mt-0.5">{currentDetails.purchaseDate || '—'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Purchase Mileage</span>
+                        <p className="text-sm font-medium text-slate-200 mt-0.5">{currentDetails.purchaseMileage ? `${Number(currentDetails.purchaseMileage).toLocaleString()} mi` : '—'}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Purchase Price</span>
+                        <p className="text-sm font-medium text-emerald-400 mt-0.5">{currentDetails.purchasePrice ? `$${Number(currentDetails.purchasePrice).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</p>
+                      </div>
+                      {currentDetails.note && (
+                        <div className="col-span-2 pt-2 border-t border-slate-700/50">
+                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Notes</span>
+                          <p className="text-sm text-slate-300 mt-0.5 whitespace-normal break-words leading-relaxed">{currentDetails.note}</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </form>
+                )
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-slate-500 italic">
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-slate-500 italic text-sm">
                   <Car size={36} className="mb-2 opacity-40 text-blue-400" />
                   <p>Select or add a vehicle on the left to view and edit its details.</p>
                 </div>
@@ -1285,35 +1440,35 @@ export default function App() {
                           value={logForm.date} 
                           onChange={e => setLogForm({...logForm, date: e.target.value})} 
                           onClick={e => { if (e.target.showPicker) e.target.showPicker(); }}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-green-500 outline-none cursor-pointer" 
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-sm focus:border-green-500 outline-none cursor-pointer" 
                         />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Odometer</label>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Odometer</label>
                       <div className="relative">
                         <Hash className="absolute left-3 top-2.5 text-slate-500" size={16} />
-                        <input type="number" step="0.1" required value={logForm.odo} onChange={e => setLogForm({...logForm, odo: e.target.value})} placeholder="e.g. 45000" className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-green-500 outline-none" />
+                        <input type="number" step="0.1" required value={logForm.odo} onChange={e => setLogForm({...logForm, odo: e.target.value})} placeholder="e.g. 45000" className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-sm focus:border-green-500 outline-none" />
                       </div>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Gallons</label>
-                      <input type="number" step="0.001" required value={logForm.volume} onChange={e => setLogForm({...logForm, volume: e.target.value})} placeholder="e.g. 12.5" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-green-500 outline-none" />
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Gallons</label>
+                      <input type="number" step="0.001" required value={logForm.volume} onChange={e => setLogForm({...logForm, volume: e.target.value})} placeholder="e.g. 12.5" className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-green-500 outline-none" />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Price/Gal</label>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Price/Gal</label>
                       <div className="relative">
                         <DollarSign className="absolute left-3 top-2.5 text-slate-500" size={16} />
-                        <input type="number" step="0.01" required value={logForm.unitPrice} onChange={e => setLogForm({...logForm, unitPrice: e.target.value})} placeholder="3.50" className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-2 text-sm focus:border-green-500 outline-none" />
+                        <input type="number" step="0.01" required value={logForm.unitPrice} onChange={e => setLogForm({...logForm, unitPrice: e.target.value})} placeholder="3.50" className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-8 pr-3 py-2 text-sm focus:border-green-500 outline-none" />
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1">Notes (Optional)</label>
-                    <input type="text" value={logForm.notes} onChange={e => setLogForm({...logForm, notes: e.target.value})} placeholder="e.g. Costco, Road Trip..." className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:border-green-500 outline-none" />
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Notes (Optional)</label>
+                    <input type="text" value={logForm.notes} onChange={e => setLogForm({...logForm, notes: e.target.value})} placeholder="e.g. Costco, Road Trip..." className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:border-green-500 outline-none" />
                   </div>
                   
                   <div className="mt-auto space-y-4">
@@ -1338,7 +1493,7 @@ export default function App() {
                 </form>
               </div>
             ) : (
-              <div className="bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700 flex flex-col h-[440px] items-center justify-center text-center text-slate-500 italic">
+              <div className="bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700 flex flex-col h-[440px] items-center justify-center text-center text-slate-500 italic text-sm">
                 <Fuel size={36} className="mb-2 opacity-40 text-green-400" />
                 <p>Select or add a vehicle on the left to start logging fill-ups.</p>
               </div>
@@ -1354,21 +1509,18 @@ export default function App() {
           <div className="space-y-6 md:space-y-8">
             
             {/* Large Tile: Mods */}
-            <div className="bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700 flex flex-col">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+            <div className="bg-slate-800 rounded-2xl shadow-lg border border-slate-700 overflow-hidden flex flex-col">
+              <div className="p-6 border-b border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
                   <h2 className="text-lg font-semibold flex items-center gap-2">
-                    <Wrench size={20} className="text-purple-400" /> Mods & Upgrades {activeVehicle ? `- ${activeVehicle.year} ${activeVehicle.make} ${activeVehicle.model}` : ''}
+                    <Flame size={20} className="text-purple-400" /> Mods & Upgrades {activeVehicle ? `- ${activeVehicle.year} ${activeVehicle.make} ${activeVehicle.model}` : ''}
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Document aftermarket parts, tuning, wheels, cosmetics, and modifications.
-                  </p>
                 </div>
                 
                 {activeVehicleId && !isAddingMod && (
                   <button 
                     onClick={() => setIsAddingMod(true)}
-                    className="flex items-center gap-2 px-3.5 py-1.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600 hover:text-white rounded-xl text-sm font-semibold transition-all cursor-pointer"
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600 hover:text-white rounded-xl text-sm font-semibold transition-all cursor-pointer"
                   >
                     <Plus size={16} /> Add Mod
                   </button>
@@ -1377,42 +1529,80 @@ export default function App() {
 
               {/* Add Mod Input Row */}
               {isAddingMod && (
-                <form onSubmit={handleAddMod} className="p-4 bg-slate-900/80 border border-purple-500/40 rounded-xl mb-5 space-y-3 shadow-md">
-                  <div className="flex flex-col md:flex-row gap-3">
-                    <div className="w-full md:w-1/3">
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Field / Mod Type</label>
+                <form onSubmit={handleAddMod} className="p-4 bg-slate-900/80 border-b border-purple-500/40 space-y-3 shadow-md">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Date</label>
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-2.5 text-slate-500 pointer-events-none" size={16} />
+                        <input 
+                          type="date" 
+                          value={newModForm.date} 
+                          onChange={e => setNewModForm({ ...newModForm, date: e.target.value })} 
+                          onClick={e => { if (e.target.showPicker) e.target.showPicker(); }}
+                          className="w-full bg-slate-800 border border-slate-600 rounded-xl pl-9 pr-3 py-2 text-sm focus:border-purple-500 outline-none text-slate-200 cursor-pointer" 
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Mileage</label>
+                      <div className="relative">
+                        <Hash className="absolute left-3 top-2.5 text-slate-500 pointer-events-none" size={16} />
+                        <input 
+                          type="number" 
+                          placeholder="e.g. 45000" 
+                          value={newModForm.mileage} 
+                          onChange={e => setNewModForm({ ...newModForm, mileage: e.target.value })} 
+                          className="w-full bg-slate-800 border border-slate-600 rounded-xl pl-9 pr-3 py-2 text-sm focus:border-purple-500 outline-none text-slate-200" 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Mod Type / Part *</label>
                       <input 
                         type="text" 
                         required 
                         placeholder="e.g. Exhaust, Wheels, Suspension, Tune" 
                         value={newModForm.category} 
                         onChange={e => setNewModForm({ ...newModForm, category: e.target.value })} 
-                        className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:border-purple-500 outline-none text-slate-200" 
+                        className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm focus:border-purple-500 outline-none text-slate-200" 
                       />
                     </div>
-                    <div className="flex-1">
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Value / Specs / Model</label>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 mb-1">Brand / Model / Specs *</label>
                       <input 
                         type="text" 
                         required 
-                        placeholder="e.g. Borla S-Type Cat-Back, Enkei RPF1 18x9.5 +38, Stage 1 ECU tune" 
+                        placeholder="e.g. Borla S-Type Cat-Back, Enkei RPF1 18x9.5 +38" 
                         value={newModForm.specs} 
                         onChange={e => setNewModForm({ ...newModForm, specs: e.target.value })} 
-                        className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:border-purple-500 outline-none text-slate-200" 
+                        className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm focus:border-purple-500 outline-none text-slate-200" 
                       />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Notes (Optional)</label>
+                    <textarea 
+                      rows={2}
+                      placeholder="e.g. Installed at 45k miles, cost $800, bought from Vivid Racing..." 
+                      value={newModForm.notes} 
+                      onChange={e => setNewModForm({ ...newModForm, notes: e.target.value })} 
+                      className="w-full bg-slate-800 border border-slate-600 rounded-xl px-3 py-2 text-sm focus:border-purple-500 outline-none text-slate-200 resize-y" 
+                    />
                   </div>
                   <div className="flex justify-end gap-2 pt-1">
                     <button 
                       type="submit" 
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold rounded-xl transition-colors cursor-pointer"
                     >
-                      Save Mod
+                      Save
                     </button>
                     <button 
                       type="button" 
-                      onClick={() => { setIsAddingMod(false); setNewModForm({ category: '', specs: '' }); }}
-                      className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg transition-colors cursor-pointer"
+                      onClick={() => { setIsAddingMod(false); setNewModForm({ date: new Date().toISOString().split('T')[0], mileage: '', category: '', specs: '', notes: '' }); }}
+                      className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-semibold rounded-xl transition-colors cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -1420,88 +1610,151 @@ export default function App() {
                 </form>
               )}
 
-              {/* Saved Mods List */}
-              <div className="space-y-2.5">
-                {currentVehicleMods.map(mod => (
-                  <div 
-                    key={mod.id} 
-                    className="p-3.5 bg-slate-900/50 hover:bg-slate-900/80 border border-slate-700 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all"
-                  >
-                    {editingModId === mod.id ? (
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
-                        <input 
-                          type="text" 
-                          value={editModForm.category} 
-                          onChange={e => setEditModForm({ ...editModForm, category: e.target.value })} 
-                          className="w-full sm:w-1/3 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm focus:border-purple-500 outline-none text-slate-200" 
-                          placeholder="Mod type"
-                        />
-                        <input 
-                          type="text" 
-                          value={editModForm.specs} 
-                          onChange={e => setEditModForm({ ...editModForm, specs: e.target.value })} 
-                          className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm focus:border-purple-500 outline-none text-slate-200" 
-                          placeholder="Specs or details"
-                        />
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => handleSaveEditMod(mod.id)} 
-                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                          >
-                            Save
-                          </button>
-                          <button 
-                            onClick={() => setEditingModId(null)} 
-                            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
+              {/* Mods Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+                    <tr>
+                      <th className="px-6 py-4 font-semibold cursor-pointer hover:text-white transition-colors" onClick={() => handleModSort('date')}>
+                        Date <SortIndicator sortKey={modSortConfig.key} column="date" direction={modSortConfig.direction} />
+                      </th>
+                      <th className="px-6 py-4 font-semibold text-left cursor-pointer hover:text-white transition-colors" onClick={() => handleModSort('mileage')}>
+                        Mileage <SortIndicator sortKey={modSortConfig.key} column="mileage" direction={modSortConfig.direction} />
+                      </th>
+                      <th className="px-6 py-4 font-semibold cursor-pointer hover:text-white transition-colors" onClick={() => handleModSort('category')}>
+                        Mod Type / Part <SortIndicator sortKey={modSortConfig.key} column="category" direction={modSortConfig.direction} />
+                      </th>
+                      <th className="px-6 py-4 font-semibold cursor-pointer hover:text-white transition-colors" onClick={() => handleModSort('specs')}>
+                        Brand / Model / Specs <SortIndicator sortKey={modSortConfig.key} column="specs" direction={modSortConfig.direction} />
+                      </th>
+                      <th className="px-6 py-4 font-semibold">Notes</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentVehicleMods.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="px-6 py-10 text-center text-sm text-slate-500 italic">
+                          No mods logged yet for this vehicle.
+                          {activeVehicleId && (
+                            <button 
+                              onClick={() => setIsAddingMod(true)}
+                              className="block mx-auto text-xs text-purple-400 hover:underline mt-1 cursor-pointer"
+                            >
+                              + Click here to add your first mod
+                            </button>
+                          )}
+                        </td>
+                      </tr>
                     ) : (
-                      <>
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 flex-1">
-                          <span className="px-3 py-1 bg-purple-500/15 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-bold uppercase tracking-wider whitespace-nowrap self-start sm:self-auto">
-                            {mod.category}
-                          </span>
-                          <span className="text-sm font-medium text-slate-200 leading-snug">
-                            {mod.specs}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 self-end sm:self-auto">
-                          <button 
-                            onClick={() => handleStartEditMod(mod)} 
-                            className="p-1.5 text-slate-400 hover:text-purple-300 transition-colors cursor-pointer" 
-                            title="Edit Mod"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteMod(mod.id)} 
-                            className="p-1.5 text-slate-400 hover:text-red-400 transition-colors cursor-pointer" 
-                            title="Delete Mod"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </>
+                      currentVehicleMods.map(mod => (
+                        editingModId === mod.id ? (
+                          <tr key={mod.id} className="border-b border-slate-700/50 bg-slate-900/50">
+                            <td className="px-6 py-3">
+                              <input 
+                                type="date" 
+                                value={editModForm.date} 
+                                onChange={e => setEditModForm({ ...editModForm, date: e.target.value })} 
+                                onClick={e => { if (e.target.showPicker) e.target.showPicker(); }}
+                                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-sm focus:border-purple-500 outline-none text-slate-200 cursor-pointer" 
+                              />
+                            </td>
+                            <td className="px-6 py-3">
+                              <input 
+                                type="number" 
+                                value={editModForm.mileage} 
+                                onChange={e => setEditModForm({ ...editModForm, mileage: e.target.value })} 
+                                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-sm focus:border-purple-500 outline-none text-slate-200" 
+                                placeholder="Mileage"
+                              />
+                            </td>
+                            <td className="px-6 py-3">
+                              <input 
+                                type="text" 
+                                value={editModForm.category} 
+                                onChange={e => setEditModForm({ ...editModForm, category: e.target.value })} 
+                                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-sm focus:border-purple-500 outline-none text-slate-200" 
+                                placeholder="Mod type"
+                              />
+                            </td>
+                            <td className="px-6 py-3">
+                              <input 
+                                type="text" 
+                                value={editModForm.specs} 
+                                onChange={e => setEditModForm({ ...editModForm, specs: e.target.value })} 
+                                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-sm focus:border-purple-500 outline-none text-slate-200" 
+                                placeholder="Specs or details"
+                              />
+                            </td>
+                            <td className="px-6 py-3">
+                              <textarea 
+                                rows={2}
+                                value={editModForm.notes} 
+                                onChange={e => setEditModForm({ ...editModForm, notes: e.target.value })} 
+                                className="w-full min-w-[180px] bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1.5 text-sm focus:border-purple-500 outline-none text-slate-200 resize-y" 
+                                placeholder="Notes"
+                              />
+                            </td>
+                            <td className="px-6 py-3 text-right">
+                              <div className="flex justify-end gap-2">
+                                <button 
+                                  onClick={() => handleSaveEditMod(mod.id)} 
+                                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold rounded-xl transition-colors cursor-pointer"
+                                >
+                                  Save
+                                </button>
+                                <button 
+                                  onClick={() => setEditingModId(null)} 
+                                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-semibold rounded-xl transition-colors cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          <tr key={mod.id} className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap text-slate-300 font-medium">
+                              {mod.date || '--'}
+                            </td>
+                            <td className="px-6 py-4 text-left text-purple-400 font-semibold whitespace-nowrap">
+                              {mod.mileage ? `${mod.mileage.toLocaleString()} mi` : '--'}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="px-2.5 py-1 bg-purple-500/15 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-bold uppercase tracking-wider whitespace-nowrap">
+                                {mod.category}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm font-medium text-slate-200">
+                              {mod.specs}
+                            </td>
+                            <td className="px-6 py-4 text-slate-300 min-w-[180px] max-w-xs sm:max-w-sm md:max-w-md whitespace-normal break-words leading-relaxed" title={mod.notes}>
+                              {mod.notes || '-'}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex justify-end gap-3">
+                                <button 
+                                  onClick={() => handleStartEditMod(mod)} 
+                                  className="text-slate-500 hover:text-purple-300 transition-colors cursor-pointer" 
+                                  title="Edit Mod"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteMod(mod.id)} 
+                                  className="text-slate-500 hover:text-red-400 transition-colors cursor-pointer" 
+                                  title="Delete Mod"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      ))
                     )}
-                  </div>
-                ))}
-
-                {currentVehicleMods.length === 0 && (
-                  <div className="text-center py-8 text-slate-500 italic">
-                    <p>No mods logged yet for this vehicle.</p>
-                    {activeVehicleId && (
-                      <button 
-                        onClick={() => setIsAddingMod(true)}
-                        className="text-xs text-purple-400 hover:underline mt-1 cursor-pointer"
-                      >
-                        + Click here to add your first mod
-                      </button>
-                    )}
-                  </div>
-                )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -1512,16 +1765,16 @@ export default function App() {
                   <h2 className="text-lg font-semibold flex items-center gap-2">
                     <Wrench size={20} className="text-emerald-400" /> Maintenance / Repair Logs {activeVehicle ? `- ${activeVehicle.year} ${activeVehicle.make} ${activeVehicle.model}` : ''}
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  {/*<p className="text-xs text-slate-400 mt-0.5">
                     Keep a verifiable history of all DIY tasks, dealer services, and repairs.
-                  </p>
+                  </p>*/}
                 </div>
                 
                 <div className="flex gap-2">
                   {selectedMaintIds.length > 0 && (
                     <button 
                       onClick={handleBulkDeleteMaint}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-red-500/20 text-red-400 text-sm font-medium rounded-lg border border-red-500/30 hover:bg-red-500 hover:text-white transition-all cursor-pointer"
+                      className="flex items-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 text-sm font-semibold rounded-xl border border-red-500/30 hover:bg-red-500 hover:text-white transition-all cursor-pointer"
                     >
                       <Trash2 size={16} /> Delete Selected ({selectedMaintIds.length})
                     </button>
@@ -1529,7 +1782,7 @@ export default function App() {
                   {activeVehicleId && (
                     <button 
                       onClick={openAddMaintModal}
-                      className="flex items-center gap-2 px-3.5 py-1.5 bg-emerald-500/20 text-emerald-400 text-sm font-semibold rounded-lg border border-emerald-500/30 hover:bg-emerald-500 hover:text-white transition-all cursor-pointer"
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-500/20 text-emerald-400 text-sm font-semibold rounded-xl border border-emerald-500/30 hover:bg-emerald-500 hover:text-white transition-all cursor-pointer"
                     >
                       <Plus size={16} /> Add Log
                     </button>
@@ -1552,14 +1805,14 @@ export default function App() {
                       <th className="px-6 py-4 font-semibold cursor-pointer hover:text-white transition-colors" onClick={() => handleMaintSort('date')}>
                         Date <SortIndicator sortKey={maintSortConfig.key} column="date" direction={maintSortConfig.direction} />
                       </th>
-                      <th className="px-6 py-4 font-semibold cursor-pointer hover:text-white transition-colors" onClick={() => handleMaintSort('item')}>
-                        Maintenance <SortIndicator sortKey={maintSortConfig.key} column="item" direction={maintSortConfig.direction} />
-                      </th>
-                      <th className="px-6 py-4 font-semibold text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleMaintSort('mileage')}>
+                      <th className="px-6 py-4 font-semibold text-left cursor-pointer hover:text-white transition-colors" onClick={() => handleMaintSort('mileage')}>
                         Mileage <SortIndicator sortKey={maintSortConfig.key} column="mileage" direction={maintSortConfig.direction} />
                       </th>
-                      <th className="px-6 py-4 font-semibold cursor-pointer hover:text-white transition-colors" onClick={() => handleMaintSort('performer')}>
-                        Performer (Car shop or DIY) <SortIndicator sortKey={maintSortConfig.key} column="performer" direction={maintSortConfig.direction} />
+                      <th className="px-6 py-4 font-semibold cursor-pointer hover:text-white transition-colors" onClick={() => handleMaintSort('service')}>
+                        Service <SortIndicator sortKey={maintSortConfig.key} column="service" direction={maintSortConfig.direction} />
+                      </th>
+                      <th className="px-6 py-4 font-semibold cursor-pointer hover:text-white transition-colors" onClick={() => handleMaintSort('performedBy')}>
+                        Performed By <SortIndicator sortKey={maintSortConfig.key} column="performedBy" direction={maintSortConfig.direction} />
                       </th>
                       <th className="px-6 py-4 font-semibold">Notes</th>
                       <th className="px-6 py-4 text-right">Actions</th>
@@ -1568,7 +1821,7 @@ export default function App() {
                   <tbody>
                     {currentVehicleMaintLogs.length === 0 ? (
                       <tr>
-                        <td colSpan="7" className="px-6 py-10 text-center text-slate-500 italic">
+                        <td colSpan="7" className="px-6 py-10 text-center text-sm text-slate-500 italic">
                           No maintenance or repair logs found for this vehicle.
                         </td>
                       </tr>
@@ -1586,22 +1839,22 @@ export default function App() {
                           <td className="px-6 py-4 whitespace-nowrap text-slate-300 font-medium">
                             {maint.date || '--'}
                           </td>
-                          <td className="px-6 py-4 text-white font-semibold">
-                            {maint.item}
-                          </td>
-                          <td className="px-6 py-4 text-right text-emerald-400 font-semibold whitespace-nowrap">
+                          <td className="px-6 py-4 text-left text-emerald-400 font-semibold whitespace-nowrap">
                             {maint.mileage ? `${maint.mileage.toLocaleString()} mi` : '--'}
                           </td>
+                          <td className="px-6 py-4 text-white font-semibold">
+                            {maint.service || maint.item}
+                          </td>
                           <td className="px-6 py-4 whitespace-nowrap text-slate-300">
-                            {maint.performer ? (
+                            {(maint.performedBy || maint.performer) ? (
                               <span className="px-2.5 py-1 bg-slate-700/60 border border-slate-600 rounded-md text-xs font-medium text-slate-300">
-                                {maint.performer}
+                                {maint.performedBy || maint.performer}
                               </span>
                             ) : (
                               '--'
                             )}
                           </td>
-                          <td className="px-6 py-4 text-slate-400 max-w-xs truncate" title={maint.notes}>
+                          <td className="px-6 py-4 text-slate-300 min-w-[180px] max-w-xs sm:max-w-sm md:max-w-md whitespace-normal break-words leading-relaxed" title={maint.notes}>
                             {maint.notes || '-'}
                           </td>
                           <td className="px-6 py-4 text-right">
@@ -1643,7 +1896,7 @@ export default function App() {
                 {selectedLogIds.length > 0 && (
                   <button 
                     onClick={handleBulkDelete}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-red-500/20 text-red-400 text-sm font-medium rounded-lg border border-red-500/30 hover:bg-red-500 hover:text-white transition-all cursor-pointer"
+                    className="flex items-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 text-sm font-semibold rounded-xl border border-red-500/30 hover:bg-red-500 hover:text-white transition-all cursor-pointer"
                   >
                     <Trash2 size={16} /> Delete Selected ({selectedLogIds.length})
                   </button>
@@ -1651,7 +1904,7 @@ export default function App() {
                 {activeVehicleId && (
                   <button 
                     onClick={() => setIsImportModalOpen(true)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 text-blue-400 text-sm font-medium rounded-lg border border-blue-500/30 hover:bg-blue-500 hover:text-white transition-all cursor-pointer"
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 text-blue-400 text-sm font-semibold rounded-xl border border-blue-500/30 hover:bg-blue-500 hover:text-white transition-all cursor-pointer"
                   >
                     <Upload size={16} /> Import CSV
                   </button>
@@ -1693,7 +1946,7 @@ export default function App() {
                 <tbody>
                   {paginatedLogs.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="px-6 py-8 text-center text-slate-500">
+                      <td colSpan="8" className="px-6 py-8 text-center text-sm text-slate-500 italic">
                         No fill-ups found for this page/vehicle.
                       </td>
                     </tr>
@@ -1724,7 +1977,7 @@ export default function App() {
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-slate-400 max-w-xs truncate" title={log.notes}>
+                        <td className="px-6 py-4 text-slate-300 min-w-[180px] max-w-xs sm:max-w-sm md:max-w-md whitespace-normal break-words leading-relaxed" title={log.notes}>
                           {log.notes || '-'}
                         </td>
                         <td className="px-6 py-4 text-right">
