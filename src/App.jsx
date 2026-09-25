@@ -910,8 +910,14 @@ export default function App() {
     return (
       <div className="auth-gate">
         <div className="auth-card">
+          <div className="auth-hero" aria-hidden="true">
+            <span className="hero-car-frame">
+              <img className="hero-car-image" src={heroCarImage} alt="" />
+            </span>
+          </div>
           <h1>
             Virtual <em>Garage</em>
+            <span className="auth-for-nerd">For Nerd</span>
           </h1>
           <p>Track vehicle specs, mods, maintenance logs, and fuel efficiency — all in one enthusiast hub.</p>
           <button className="auth-google" type="button" onClick={handleGoogleSignIn}>
