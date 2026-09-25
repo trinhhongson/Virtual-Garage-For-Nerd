@@ -960,7 +960,9 @@ export default function App() {
                   </div>
                 </div>
                 <div className="hero-car" aria-hidden="true">
-                  <img className="hero-car-image" src={heroCarImage} alt="" />
+                  <span className="hero-car-frame">
+                    <img className="hero-car-image" src={heroCarImage} alt="" />
+                  </span>
                 </div>
                 <div className="hero-actions">
                   <button
@@ -1605,7 +1607,7 @@ export default function App() {
               <Icon>{ICONS.bolt}</Icon>Mod
             </button>
           </div>
-          <div className="entry-editor" id="entry-editor" hidden={quickAdd.form === null}>
+          <div className="entry-editor" id="entry-editor" hidden={quickAdd.form === null} data-entry={quickAdd.form || undefined}>
             <button className="entry-back" id="entry-back" type="button" onClick={backToChooser}>
               ← Entry type
             </button>
