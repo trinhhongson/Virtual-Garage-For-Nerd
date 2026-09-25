@@ -1,73 +1,87 @@
-# Fuel-MPG-Tracker
-I am a car guy and I have OCD
-=============================
+# Virtual Garage for Nerds 🏎️
 
-A modern, responsive React web application built to track your vehicle's fuel efficiency, log gas purchases, and get AI-powered maintenance insights (coming later - in development).
+Your cars deserve better than a glovebox full of crumpled receipts and a Notes app entry that just says "oil??". This is a digital garage for people who check their tire pressures for fun — track every fill-up, every oil change, every questionable mod purchase, and watch your MPG trend like it's a stock ticker.
 
-🚀 Features
+**Live demo:** https://trinhhongson.github.io/Virtual-Garage-For-Nerd/
 
-My Garage: Manage multiple vehicles by adding or editing their year, make, and model. You can easily switch vehicle contexts instantly by clicking on a car in your garage list.
+## What's in the garage
 
+- **My Garage** — manage your whole fleet. Year, make, model, nickname, VIN, trim, color, purchase details. Switch between your daily and your "financially irresponsible decision" with one tap.
+- **Logbook** — three journals for your car's life story:
+  - ⛽ **Fuel** — every fill-up with odometer, gallons, and price. MPG is calculated automatically (current odo − previous odo ÷ gallons, the way the car gods intended).
+  - 🔧 **Maintenance** — oil changes, brake pads, spark plugs, and the torque specs you'll definitely need again in 30k miles.
+  - ⚡ **Mods** — because "just one more part" is a lifestyle. Track brand, specs, cost, and mileage at install.
+- **Fuel insights** — a smoothed MPG trend graph (moving average + spline, so one bad tank doesn't ruin the vibe). Hover on desktop or tap on mobile to inspect any fill-up. Plus average MPG, best tank, and total fuel spend.
+- **CSV import** — bulk-import years of fuel logs. The template header is `Date,Odometer,Gallons,PricePerGal,Notes`. Finally, a use for that spreadsheet you've been "meaning to organize."
+- **Dark mode** — automatic via your system preference. For late-night parts browsing, as is tradition.
+- **Mobile-first** — bottom nav, bottom sheets, 44px touch targets. Built to be used with greasy hands in a driveway. (Wash them first. Please.)
 
-Automated MPG Calculation: The app calculates your MPG automatically by capturing the current odometer reading, subtracting the previous reading, and dividing by the purchased gas volume.
+## Tech stack
 
+- **Frontend:** React 19 + Vite — no heavy chart libraries, the MPG graph is hand-rolled SVG. Like a carburetor: simple, mechanical, satisfying.
+- **Backend:** Firebase — Google sign-in for auth, Firestore for data (`users/{uid}/vehicles`, `/logs`, `/mods`, `/maintenance`).
+- **Hosting:** GitHub Pages, deployed automatically on every push to `main`.
 
-Upcoming Maintenance Check: Analyzes your specific vehicle and latest odometer reading to suggest preventative maintenance.
+## Self-hosting quick start
 
+Want your own garage? Takes about 10 minutes — less time than an oil change.
 
-Analyze My MPG Trends: Evaluates your recent trips and average MPG to provide actionable fuel economy tips.
+**1. Clone and install**
 
+```bash
+git clone https://github.com/trinhhongson/Virtual-Garage-For-Nerd.git
+cd Virtual-Garage-For-Nerd
+npm install
+```
 
-History & Performance Dashboard: A full-width data table featuring sortable columns , pagination (select between 10, 20, or 50 rows per page) , inline log editing , and a dedicated "Notes" column.
+**2. Bring your own Firebase** (free Spark plan is plenty)
 
+- Create a project at [console.firebase.google.com](https://console.firebase.google.com).
+- **Authentication → Sign-in method** → enable **Google**. (Yes, Google only — your garage has standards.)
+- **Firestore Database** → Create database → start in **production mode** and add rules scoped to the signed-in user, e.g.:
 
-Bulk CSV Import: Easily import legacy data. Thanks to the flexible NoSQL backend, it gracefully handles missing data (like missing dates or prices) by displaying "N/A" or "--" instead of crashing.
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
 
-🛠️ Tech Stack
+**3. Point the app at your project**
 
-Frontend: React (JSX) and Vite.
+Open `src/App.jsx`, find the `firebaseConfig` object near the top, and swap in your own project's values (Firebase console → Project settings → Your apps → Web app):
 
+```js
+const firebaseConfig = {
+  apiKey: "yours",
+  authDomain: "yours.firebaseapp.com",
+  projectId: "yours",
+  // ...
+};
+```
 
-Styling: Tailwind CSS.
+**4. Run it**
 
+```bash
+npm run dev     # local dev server
+npm run build   # production build
+npm run lint    # keep it clean
+```
 
-Database: Firebase Firestore (NoSQL).
+**5. Deploy to GitHub Pages** (optional, but why not flex)
 
+- `vite.config.js` already sets `base: '/Virtual-Garage-For-Nerd/'` — change it to match *your* repo name.
+- Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+- Push to `main`. The included workflow builds and deploys automatically. Your garage goes live in ~2 minutes — faster than most turbo spool.
 
-Icons: Lucide-React.
+## Contributing
 
-⚙️ Local Setup & Installation
-If you want to run this app locally and connect it to your own database, follow these steps:
+Found a bug? Got a feature idea (launch control mode? maintenance reminders? a "money spent on mods" shame counter)? Open an issue or PR. All car nerds welcome — yes, even the rotary people.
 
-1. Clone the Repository & Install Dependencies
-Navigate into the project folder and install the required packages:
+## License
 
-Bash
-npm install lucide-react firebase
-
-2. Set Up Firebase
-
-Create a new project in the Firebase console using the free "Spark" plan.
-
-Go to Authentication > Sign-in method, select Anonymous, and enable it.
-
-Go to Firestore Database and create a database. Start in Test Mode for initial development.
-
-Add a "Web App" to your Firebase project to generate your configuration snippet.
-
-3. Connect Your Database
-
-In the src folder, create a new file named firebase.js.
-
-Paste your entire configuration snippet (the const firebaseConfig = { ... } block) into this file.
-
-4. Run the App
-Start your local Vite development server:
-
-Bash
-npm run dev
-
-Click the localhost link in your terminal to open the live app in your browser.
-
-🔒 Going to Production
-When you are ready to deploy (e.g., via GitHub Pages), remember to transition your Firestore Database out of "Test Mode". Locking down your security rules will not wipe any of your existing data.
+MIT. Do whatever you want with it, just don't blame us when the mod list gets longer than the maintenance list.

@@ -222,7 +222,6 @@ export default function App() {
   const wrapRef = useRef(null);
   const tooltipRef = useRef(null);
   const crosshairRef = useRef(null);
-  const dotRefs = useRef([]);
   const selectAllRef = useRef(null);
   const mobileSelectAllRef = useRef(null);
 
@@ -379,11 +378,10 @@ export default function App() {
       const yy = top + ((bottom - top) * i) / 3;
       return { y: yy, label: v.toFixed(i === 3 ? 0 : 1) };
     });
-    // Dots ride the smoothed curve (so hover/touch still snap to each fill-up);
-    // the tooltip keeps showing the entry's actual recorded MPG.
-    const dotR = n > 24 ? 3.5 : n > 12 ? 5 : 6;
+    // Dots are gone from the render — hover/touch snaps to each fill-up by x-coordinate,
+    // and the tooltip keeps showing the entry's actual recorded MPG.
     const dots = chartPoints.map((p, i) => ({ cx: x(i).toFixed(1), cy: y(trend[i]).toFixed(1), date: p.date, mpg: p.mpg.toFixed(2) }));
-    return { width, left, right, top, bottom, line, area, grid, dots, dotR, first: formatDate(chartPoints[0].date), last: formatDate(chartPoints[chartPoints.length - 1].date) };
+    return { width, left, right, top, bottom, line, area, grid, dots, first: formatDate(chartPoints[0].date), last: formatDate(chartPoints[chartPoints.length - 1].date) };
   }, [chartPoints]);
 
   const chartAvg = useMemo(
@@ -782,13 +780,17 @@ export default function App() {
   }
 
   function showNearest(clientX) {
-    if (!chart || !dotRefs.current.length) return;
+    if (!chart || !chart.dots.length) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    // Map the pointer to SVG coordinates, then snap to the nearest fill-up by x.
+    const svgX = ((clientX - rect.left) / rect.width) * chart.width;
     let nearest = 0;
     let best = Infinity;
-    dotRefs.current.forEach((dot, i) => {
-      if (!dot) return;
-      const box = dot.getBoundingClientRect();
-      const dist = Math.abs(clientX - (box.left + box.width / 2));
+    chart.dots.forEach((d, i) => {
+      const dist = Math.abs(Number(d.cx) - svgX);
       if (dist < best) {
         best = dist;
         nearest = i;
@@ -1495,26 +1497,6 @@ export default function App() {
                       <path className="chart-area" d={chart.area} />
                       <path className="chart-line" d={chart.line} />
                       <line className="chart-crosshair" id="chart-crosshair" ref={crosshairRef} y1={chart.top} y2={chart.bottom} hidden />
-                      {chart.dots.map((d, i) => (
-                        <circle
-                          key={i}
-                          ref={(el) => {
-                            dotRefs.current[i] = el;
-                          }}
-                          className={'chart-dot mpg-point' + (tip.active === i ? ' active' : '')}
-                          tabIndex="0"
-                          cx={d.cx}
-                          cy={d.cy}
-                          r={tip.active === i ? chart.dotR + 2 : chart.dotR}
-                          onMouseEnter={() => showPoint(i)}
-                          onFocus={() => showPoint(i)}
-                          onBlur={hideTip}
-                        >
-                          <title>
-                            {formatDate(d.date)} · {d.mpg} MPG
-                          </title>
-                        </circle>
-                      ))}
                       <text className="axis-label" x={chart.left} y="278">
                         {chart.first}
                       </text>
