@@ -78,6 +78,41 @@ function formatNumber(value) {
   return Number(value || 0).toLocaleString('en-US');
 }
 
+// Centered moving average: damps fill-up noise so the MPG trend stays readable as entries pile up.
+function smoothSeries(values, windowSize) {
+  const half = Math.floor(windowSize / 2);
+  return values.map((_, i) => {
+    let sum = 0;
+    let count = 0;
+    for (let j = i - half; j <= i + half; j += 1) {
+      if (j >= 0 && j < values.length) {
+        sum += values[j];
+        count += 1;
+      }
+    }
+    return sum / count;
+  });
+}
+
+// Catmull-Rom spline through the points, emitted as cubic Bezier segments for the SVG path.
+function smoothLinePath(pts) {
+  if (pts.length < 2) return '';
+  if (pts.length === 2) return 'M' + pts[0].x.toFixed(1) + ' ' + pts[0].y.toFixed(1) + 'L' + pts[1].x.toFixed(1) + ' ' + pts[1].y.toFixed(1);
+  let d = 'M' + pts[0].x.toFixed(1) + ' ' + pts[0].y.toFixed(1);
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += 'C' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ' ' + c2x.toFixed(1) + ' ' + c2y.toFixed(1) + ' ' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
+  }
+  return d;
+}
+
 function formatMoney(value) {
   return '$' + Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -327,17 +362,28 @@ export default function App() {
     const right = 690;
     const top = 38;
     const bottom = 248;
+    const n = chartPoints.length;
     const max = Math.max(...chartPoints.map((p) => p.mpg)) + 10;
-    const x = (i) => (chartPoints.length === 1 ? (left + right) / 2 : left + ((right - left) * i) / (chartPoints.length - 1));
+    const x = (i) => (n === 1 ? (left + right) / 2 : left + ((right - left) * i) / (n - 1));
     const y = (v) => bottom - (v / max) * (bottom - top);
-    const line = chartPoints.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.mpg).toFixed(1)).join(' ');
-    const area = line + ' L' + x(chartPoints.length - 1).toFixed(1) + ' ' + bottom + ' L' + x(0).toFixed(1) + ' ' + bottom + ' Z';
+    // Smooth the trend with a widening moving-average window as entries accumulate,
+    // then draw it as a spline instead of a jagged polyline.
+    const windowSize = n >= 15 ? 5 : n >= 7 ? 3 : 1;
+    const trend = smoothSeries(
+      chartPoints.map((p) => p.mpg),
+      windowSize
+    );
+    const line = smoothLinePath(chartPoints.map((p, i) => ({ x: x(i), y: y(trend[i]) })));
+    const area = line + 'L' + x(n - 1).toFixed(1) + ' ' + bottom + 'L' + x(0).toFixed(1) + ' ' + bottom + 'Z';
     const grid = [max, (max * 2) / 3, max / 3, 0].map((v, i) => {
       const yy = top + ((bottom - top) * i) / 3;
       return { y: yy, label: v.toFixed(i === 3 ? 0 : 1) };
     });
-    const dots = chartPoints.map((p, i) => ({ cx: x(i).toFixed(1), cy: y(p.mpg).toFixed(1), date: p.date, mpg: p.mpg.toFixed(2) }));
-    return { width, left, right, top, bottom, line, area, grid, dots, first: formatDate(chartPoints[0].date), last: formatDate(chartPoints[chartPoints.length - 1].date) };
+    // Dots ride the smoothed curve (so hover/touch still snap to each fill-up);
+    // the tooltip keeps showing the entry's actual recorded MPG.
+    const dotR = n > 24 ? 3.5 : n > 12 ? 5 : 6;
+    const dots = chartPoints.map((p, i) => ({ cx: x(i).toFixed(1), cy: y(trend[i]).toFixed(1), date: p.date, mpg: p.mpg.toFixed(2) }));
+    return { width, left, right, top, bottom, line, area, grid, dots, dotR, first: formatDate(chartPoints[0].date), last: formatDate(chartPoints[chartPoints.length - 1].date) };
   }, [chartPoints]);
 
   const chartAvg = useMemo(
@@ -1459,7 +1505,7 @@ export default function App() {
                           tabIndex="0"
                           cx={d.cx}
                           cy={d.cy}
-                          r={tip.active === i ? 8 : 6}
+                          r={tip.active === i ? chart.dotR + 2 : chart.dotR}
                           onMouseEnter={() => showPoint(i)}
                           onFocus={() => showPoint(i)}
                           onBlur={hideTip}
